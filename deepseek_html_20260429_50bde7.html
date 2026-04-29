@@ -1,0 +1,1829 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人知识库驱动的深度研究助手</title>
+    <style>
+        :root {
+            --bg: #0f0f14;
+            --surface: #1a1a24;
+            --surface2: #222230;
+            --surface3: #2a2a3a;
+            --text: #e0e0e0;
+            --text2: #b0b0b8;
+            --text3: #888899;
+            --accent: #6c8cff;
+            --accent2: #4a6aff;
+            --accent-glow: rgba(108, 140, 255, 0.25);
+            --gold: #f0c060;
+            --gold-dim: #8a7030;
+            --red: #ff6b6b;
+            --green: #5cdb8b;
+            --cyan: #5cc9db;
+            --purple: #b08cff;
+            --border: #2a2a38;
+            --border-light: #353545;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --radius-xs: 5px;
+            --font: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+            --mono: 'JetBrains Mono', 'Cascadia Code', 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.55);
+            --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html {
+            scroll-behavior: smooth;
+        }
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+            background-image:
+                radial-gradient(ellipse at 20% 15%, rgba(108, 140, 255, 0.06) 0%, transparent 55%),
+                radial-gradient(ellipse at 75% 60%, rgba(176, 140, 255, 0.05) 0%, transparent 55%),
+                radial-gradient(ellipse at 45% 80%, rgba(240, 192, 96, 0.04) 0%, transparent 50%);
+            background-attachment: fixed;
+        }
+
+        /* ===== HEADER ===== */
+        .app-header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: var(--shadow);
+        }
+        .app-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            font-size: 1.2rem;
+            letter-spacing: -0.3px;
+            color: var(--text);
+            text-decoration: none;
+        }
+        .app-logo .icon {
+            width: 38px;
+            height: 38px;
+            border-radius: var(--radius-sm);
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            color: #fff;
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+        .header-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .kb-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.82rem;
+            color: var(--text2);
+            background: var(--surface2);
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: 1px solid var(--border-light);
+        }
+        .kb-indicator .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            animation: pulse-dot 2s infinite;
+        }
+        @keyframes pulse-dot {
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(92, 219, 139, 0.5);
+            }
+            50% {
+                box-shadow: 0 0 0 8px rgba(92, 219, 139, 0);
+            }
+        }
+
+        /* ===== LAYOUT ===== */
+        .main-container {
+            display: flex;
+            gap: 20px;
+            padding: 20px 28px;
+            max-width: 1500px;
+            margin: 0 auto;
+            min-height: calc(100vh - 160px);
+        }
+        @media (max-width: 1024px) {
+            .main-container {
+                flex-direction: column;
+                padding: 12px;
+            }
+            .app-header {
+                padding: 10px 14px;
+            }
+        }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar {
+            width: 340px;
+            min-width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 100%;
+                min-width: auto;
+                flex-direction: row;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            .sidebar>* {
+                flex: 1 1 200px;
+                min-width: 180px;
+            }
+        }
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px;
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+        }
+        .panel:hover {
+            border-color: var(--border-light);
+        }
+        .panel-title {
+            font-weight: 700;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--text3);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+        .panel-title .pt-icon {
+            font-size: 1rem;
+        }
+
+        /* ===== FILE UPLOAD ZONE ===== */
+        .upload-zone {
+            border: 2px dashed var(--border-light);
+            border-radius: var(--radius-sm);
+            padding: 24px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: var(--transition);
+            background: var(--surface2);
+            position: relative;
+        }
+        .upload-zone:hover {
+            border-color: var(--accent);
+            background: var(--surface3);
+            box-shadow: 0 0 16px rgba(108, 140, 255, 0.1);
+        }
+        .upload-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(108, 140, 255, 0.08);
+            box-shadow: 0 0 24px var(--accent-glow);
+        }
+        .upload-zone .uz-icon {
+            font-size: 2.5rem;
+            margin-bottom: 6px;
+        }
+        .upload-zone .uz-text {
+            font-size: 0.85rem;
+            color: var(--text2);
+        }
+        .upload-zone .uz-hint {
+            font-size: 0.72rem;
+            color: var(--text3);
+            margin-top: 4px;
+        }
+        .upload-zone input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* ===== DOCLIST ===== */
+        .doc-list {
+            list-style: none;
+            max-height: 200px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .doc-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        .doc-list::-webkit-scrollbar-thumb {
+            background: var(--border-light);
+            border-radius: 4px;
+        }
+        .doc-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: var(--radius-xs);
+            background: var(--surface2);
+            font-size: 0.8rem;
+            transition: var(--transition);
+            cursor: default;
+            border: 1px solid transparent;
+        }
+        .doc-item:hover {
+            border-color: var(--border-light);
+            background: var(--surface3);
+        }
+        .doc-item .doc-icon {
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        .doc-item .doc-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .doc-item .doc-size {
+            font-size: 0.7rem;
+            color: var(--text3);
+            flex-shrink: 0;
+        }
+        .doc-item .doc-remove {
+            cursor: pointer;
+            color: var(--text3);
+            font-size: 0.85rem;
+            padding: 2px 6px;
+            border-radius: 3px;
+            transition: var(--transition);
+            flex-shrink: 0;
+            border: none;
+            background: transparent;
+        }
+        .doc-item .doc-remove:hover {
+            color: var(--red);
+            background: rgba(255, 107, 107, 0.1);
+        }
+        .empty-state {
+            text-align: center;
+            color: var(--text3);
+            font-size: 0.78rem;
+            padding: 16px;
+        }
+
+        /* ===== MAIN CONTENT ===== */
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-width: 0;
+        }
+
+        /* ===== RESEARCH INPUT ===== */
+        .research-input-wrap {
+            display: flex;
+            gap: 8px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px;
+            box-shadow: var(--shadow);
+        }
+        .research-input-wrap textarea {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 0.95rem;
+            resize: none;
+            padding: 8px 10px;
+            outline: none;
+            min-height: 48px;
+            max-height: 120px;
+            line-height: 1.5;
+        }
+        .research-input-wrap textarea::placeholder {
+            color: var(--text3);
+        }
+        .btn {
+            padding: 10px 18px;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: var(--transition);
+            font-family: var(--font);
+            letter-spacing: 0.2px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+            box-shadow: 0 2px 12px var(--accent-glow);
+        }
+        .btn-primary:hover {
+            background: var(--accent2);
+            box-shadow: 0 4px 20px rgba(108, 140, 255, 0.4);
+            transform: translateY(-1px);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .btn-secondary {
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border-light);
+        }
+        .btn-secondary:hover {
+            background: var(--surface3);
+            border-color: var(--text3);
+        }
+        .btn-sm {
+            padding: 5px 12px;
+            font-size: 0.75rem;
+            border-radius: 6px;
+        }
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+
+        /* ===== MODE TABS ===== */
+        .mode-tabs {
+            display: flex;
+            gap: 4px;
+            background: var(--surface2);
+            border-radius: 20px;
+            padding: 3px;
+            border: 1px solid var(--border-light);
+        }
+        .mode-tab {
+            padding: 7px 16px;
+            border-radius: 18px;
+            cursor: pointer;
+            font-size: 0.78rem;
+            font-weight: 600;
+            transition: var(--transition);
+            border: none;
+            background: transparent;
+            color: var(--text2);
+            font-family: var(--font);
+            white-space: nowrap;
+        }
+        .mode-tab.active {
+            background: var(--accent);
+            color: #fff;
+            box-shadow: 0 2px 8px var(--accent-glow);
+        }
+        .mode-tab:hover:not(.active) {
+            color: var(--text);
+            background: var(--surface3);
+        }
+
+        /* ===== RESULTS ===== */
+        .results-panel {
+            flex: 1;
+            overflow-y: auto;
+            max-height: 55vh;
+        }
+        .results-panel::-webkit-scrollbar {
+            width: 5px;
+        }
+        .results-panel::-webkit-scrollbar-thumb {
+            background: var(--border-light);
+            border-radius: 5px;
+        }
+        .result-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+            animation: fadeInUp 0.35s ease;
+        }
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .result-card:hover {
+            border-color: var(--border-light);
+            box-shadow: var(--shadow-lg);
+        }
+        .result-card .rc-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        .badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 10px;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+        .badge-source {
+            background: rgba(108, 140, 255, 0.18);
+            color: var(--accent);
+            border: 1px solid rgba(108, 140, 255, 0.3);
+        }
+        .badge-score {
+            background: rgba(240, 192, 96, 0.15);
+            color: var(--gold);
+            border: 1px solid rgba(240, 192, 96, 0.3);
+        }
+        .badge-type {
+            background: rgba(92, 201, 219, 0.15);
+            color: var(--cyan);
+            border: 1px solid rgba(92, 201, 219, 0.3);
+        }
+        .result-card .rc-content {
+            font-size: 0.9rem;
+            color: var(--text2);
+            line-height: 1.7;
+        }
+        .result-card .rc-content mark {
+            background: rgba(240, 192, 96, 0.25);
+            color: var(--gold);
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+        .result-card .rc-footer {
+            margin-top: 10px;
+            font-size: 0.72rem;
+            color: var(--text3);
+            border-top: 1px solid var(--border);
+            padding-top: 8px;
+        }
+        .highlight-box {
+            background: var(--surface2);
+            border-left: 3px solid var(--accent);
+            padding: 12px 16px;
+            border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+            margin: 10px 0;
+            font-size: 0.85rem;
+        }
+        .insight-block {
+            background: linear-gradient(135deg, rgba(108, 140, 255, 0.06), rgba(176, 140, 255, 0.06));
+            border: 1px solid rgba(108, 140, 255, 0.2);
+            border-radius: var(--radius-sm);
+            padding: 14px 16px;
+            margin: 8px 0;
+        }
+        .insight-block .insight-label {
+            font-weight: 700;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--purple);
+            margin-bottom: 4px;
+        }
+
+        /* ===== LOADING ===== */
+        .loading-spinner {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 16px;
+            color: var(--text2);
+            font-size: 0.9rem;
+        }
+        .spinner {
+            width: 22px;
+            height: 22px;
+            border: 3px solid var(--border-light);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ===== TOAST ===== */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .toast {
+            padding: 12px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            font-weight: 500;
+            animation: slideIn 0.3s ease;
+            box-shadow: var(--shadow-lg);
+            max-width: 380px;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(60px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        .toast-success {
+            background: #1a3a2a;
+            color: #8af0b8;
+            border: 1px solid rgba(92, 219, 139, 0.4);
+        }
+        .toast-error {
+            background: #3a1a1a;
+            color: #ff8a8a;
+            border: 1px solid rgba(255, 107, 107, 0.4);
+        }
+        .toast-info {
+            background: #1a2a3a;
+            color: #8ac8f0;
+            border: 1px solid rgba(108, 140, 255, 0.4);
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            .app-header {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .mode-tabs {
+                flex-wrap: wrap;
+            }
+            .mode-tab {
+                font-size: 0.7rem;
+                padding: 5px 10px;
+            }
+            .results-panel {
+                max-height: 40vh;
+            }
+            .sidebar {
+                flex-direction: column;
+            }
+            .sidebar>* {
+                flex: auto;
+                min-width: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ==================== HEADER ==================== -->
+    <header class="app-header">
+        <a class="app-logo" href="#">
+            <span class="icon">🧠</span>
+            <span>深度研究助手</span>
+        </a>
+        <div class="header-actions">
+            <div class="kb-indicator" id="kbIndicator">
+                <span class="dot"></span>
+                <span id="kbDocCount">知识库: 0 份文档</span>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="clearAllDocs()" title="清空知识库">
+                🗑️ 清空
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="exportResearch()" title="导出研究记录">
+                📥 导出
+            </button>
+        </div>
+    </header>
+
+    <!-- ==================== MAIN LAYOUT ==================== -->
+    <div class="main-container">
+
+        <!-- ===== SIDEBAR ===== -->
+        <aside class="sidebar">
+            <!-- 上传区域 -->
+            <div class="panel">
+                <div class="panel-title"><span class="pt-icon">📄</span> 文档上传</div>
+                <div class="upload-zone" id="uploadZone">
+                    <div class="uz-icon">📁</div>
+                    <div class="uz-text">拖放文件或点击上传</div>
+                    <div class="uz-hint">支持 PDF · TXT · Markdown · HTML</div>
+                    <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md,.markdown,.html,.htm,.csv,.json" />
+                </div>
+                <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+                    <button class="btn btn-secondary btn-sm" onclick="addUrlDocument()">🔗 添加URL</button>
+                    <button class="btn btn-secondary btn-sm" onclick="addTextDocument()">✏️ 粘贴文本</button>
+                </div>
+            </div>
+
+            <!-- 文档列表 -->
+            <div class="panel">
+                <div class="panel-title"><span class="pt-icon">📚</span> 知识库文档</div>
+                <ul class="doc-list" id="docList">
+                    <li class="empty-state">📭 尚未添加文档</li>
+                </ul>
+            </div>
+
+            <!-- 研究模式 -->
+            <div class="panel">
+                <div class="panel-title"><span class="pt-icon">⚙️</span> 研究模式</div>
+                <div class="mode-tabs" id="modeTabs">
+                    <button class="mode-tab active" data-mode="deep">🔬 深度分析</button>
+                    <button class="mode-tab" data-mode="qa">💬 问答模式</button>
+                    <button class="mode-tab" data-mode="summary">📝 摘要总结</button>
+                    <button class="mode-tab" data-mode="explore">🔍 探索发现</button>
+                </div>
+                <div style="margin-top:10px;">
+                    <label style="font-size:0.75rem;color:var(--text3);display:flex;align-items:center;gap:6px;">
+                        <input type="range" id="retrievalCount" min="3" max="20" value="8" style="flex:1;accent-color:var(--accent);">
+                        <span>检索片段: <strong id="retrievalCountVal">8</strong></span>
+                    </label>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ===== MAIN CONTENT ===== -->
+        <div class="content-area">
+            <!-- 输入区 -->
+            <div class="panel" style="padding:12px 16px;">
+                <div class="research-input-wrap">
+                    <textarea id="researchQuery" rows="2"
+                    placeholder="输入你的研究问题...&#10;例如：「总结知识库中关于人工智能发展的主要观点」「对比不同文档对气候变化的论述」「从我的笔记中发现隐藏的关联模式」"></textarea>
+                    <button class="btn btn-primary" id="btnResearch" onclick="executeResearch()">
+                        🚀 开始研究
+                    </button>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;" id="suggestionTags">
+                    <span style="font-size:0.72rem;color:var(--text3);">💡 建议:</span>
+                </div>
+            </div>
+
+            <!-- 结果区 -->
+            <div class="results-panel" id="resultsPanel">
+                <div class="empty-state" style="padding:40px;">
+                    <div style="font-size:3rem;margin-bottom:12px;">🔎</div>
+                    <div style="font-weight:600;color:var(--text2);">等待研究查询</div>
+                    <div style="font-size:0.8rem;color:var(--text3);margin-top:4px;">
+                        上传文档构建知识库，然后输入研究问题开始深度分析
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== TOAST CONTAINER ==================== -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ==================== MODALS ==================== -->
+    <!-- URL Modal -->
+    <dialog id="urlModal" style="
+    border:none;border-radius:var(--radius);padding:24px;background:var(--surface);
+    color:var(--text);box-shadow:var(--shadow-lg);max-width:500px;width:90%;
+    ">
+    <h3 style="margin-bottom:12px;">🔗 添加URL文档</h3>
+    <input type="url" id="urlInput" placeholder="https://example.com/article" style="width:100%;padding:10px;border-radius:var(--radius-xs);border:1px solid var(--border-light);background:var(--surface2);color:var(--text);font-family:var(--font);margin-bottom:12px;">
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('urlModal').close()">取消</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmAddUrl()">确认添加</button>
+    </div>
+</dialog>
+
+<!-- Text Modal -->
+<dialog id="textModal" style="
+border:none;border-radius:var(--radius);padding:24px;background:var(--surface);
+color:var(--text);box-shadow:var(--shadow-lg);max-width:600px;width:90%;
+">
+<h3 style="margin-bottom:12px;">✏️ 粘贴文本</h3>
+<input type="text" id="textDocTitle" placeholder="文档标题（可选）" style="width:100%;padding:10px;border-radius:var(--radius-xs);border:1px solid var(--border-light);background:var(--surface2);color:var(--text);font-family:var(--font);margin-bottom:8px;">
+<textarea id="textDocContent" rows="8" placeholder="在此粘贴文本内容..." style="width:100%;padding:10px;border-radius:var(--radius-xs);border:1px solid var(--border-light);background:var(--surface2);color:var(--text);font-family:var(--font);resize:vertical;margin-bottom:12px;"></textarea>
+<div style="display:flex;gap:8px;justify-content:flex-end;">
+    <button class="btn btn-secondary btn-sm" onclick="document.getElementById('textModal').close()">取消</button>
+    <button class="btn btn-primary btn-sm" onclick="confirmAddText()">确认添加</button>
+</div>
+</dialog>
+
+<script>
+    // ==================== 知识库引擎 (纯前端实现) ====================
+    // 使用 TF-IDF 向量化 + 余弦相似度进行语义检索
+    // 支持文档分块、关键词提取、混合检索
+
+    class KnowledgeBase {
+        constructor() {
+            this.documents = []; // {id, name, type, size, chunks: [{text, index}], addedAt}
+            this.chunks = []; // {docId, docName, chunkIndex, text, vector, keywords}
+            this.vocabulary = new Map(); // word -> index in IDF map
+            this.idfValues = new Map(); // word -> idf value
+            this.totalChunks = 0;
+            this.researchHistory = [];
+            this.loadFromStorage();
+        }
+
+        // 从localStorage加载
+        loadFromStorage() {
+            try {
+                const saved = localStorage.getItem('kb_documents');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    this.documents = data.documents || [];
+                    this.chunks = data.chunks || [];
+                    this.vocabulary = new Map(data.vocabulary || []);
+                    this.idfValues = new Map(data.idfValues || []);
+                    this.totalChunks = this.chunks.length;
+                    this.researchHistory = data.researchHistory || [];
+                    // 重建向量（从存储的稀疏表示）
+                    this._rebuildVectors();
+                }
+            } catch (e) {
+                console.warn('加载知识库失败，使用空知识库', e);
+            }
+        }
+
+        saveToStorage() {
+            try {
+                const data = {
+                    documents: this.documents.map(d => ({
+                        ...d,
+                        chunks: d.chunks.map(c => ({ text: c.text, index: c.index }))
+                    })),
+                    chunks: this.chunks.map(c => ({
+                        docId: c.docId,
+                        docName: c.docName,
+                        chunkIndex: c.chunkIndex,
+                        text: c.text,
+                        vector: Array.from(c.vector), // 存储稀疏向量
+                        keywords: c.keywords
+                    })),
+                    vocabulary: Array.from(this.vocabulary.entries()),
+                    idfValues: Array.from(this.idfValues.entries()),
+                    researchHistory: this.researchHistory.slice(-50)
+                };
+                localStorage.setItem('kb_documents', JSON.stringify(data));
+            } catch (e) {
+                console.warn('保存知识库失败（可能超出存储限制）', e);
+                this.showToast('知识库过大，部分数据可能未保存', 'info');
+            }
+        }
+
+        _rebuildVectors() {
+            // 将存储的稀疏向量重建为Map
+            for (const chunk of this.chunks) {
+                if (Array.isArray(chunk.vector)) {
+                    const vecMap = new Map(chunk.vector);
+                    chunk.vector = vecMap;
+                } else if (!(chunk.vector instanceof Map)) {
+                    chunk.vector = new Map();
+                }
+            }
+        }
+
+        // 分词（中文+英文混合）
+        tokenize(text) {
+            const tokens = [];
+            // 中文分词（简单2-gram + 单字）
+            const chineseChars = text.match(/[\u4e00-\u9fff]+/g) || [];
+            for (const segment of chineseChars) {
+                // 2-gram
+                for (let i = 0; i < segment.length - 1; i++) {
+                    tokens.push(segment.substring(i, i + 2));
+                }
+                // 单字
+                for (const char of segment) {
+                    tokens.push(char);
+                }
+            }
+            // 英文分词
+            const englishWords = text.match(/[a-zA-Z]+/g) || [];
+            for (const word of englishWords) {
+                const lower = word.toLowerCase();
+                tokens.push(lower);
+                // 也加入词干近似
+                if (lower.length > 4) tokens.push(lower.substring(0, Math.floor(lower.length * 0.7)));
+            }
+            // 数字
+            const numbers = text.match(/\d+/g) || [];
+            for (const num of numbers) {
+                tokens.push('NUM:' + num);
+            }
+            return tokens;
+        }
+
+        // 构建或更新词汇表和IDF
+        updateIDF() {
+            this.vocabulary.clear();
+            this.totalChunks = this.chunks.length;
+            const docFreq = new Map(); // word -> number of chunks containing it
+
+            for (const chunk of this.chunks) {
+                const uniqueTokens = new Set(chunk.keywords || this.tokenize(chunk.text));
+                for (const token of uniqueTokens) {
+                    docFreq.set(token, (docFreq.get(token) || 0) + 1);
+                }
+            }
+
+            let idx = 0;
+            this.idfValues.clear();
+            for (const [token, freq] of docFreq) {
+                this.vocabulary.set(token, idx);
+                this.idfValues.set(token, Math.log((this.totalChunks + 1) / (freq + 1)) + 1);
+                idx++;
+            }
+
+            // 重新计算所有chunk的向量
+            for (const chunk of this.chunks) {
+                chunk.keywords = this.tokenize(chunk.text);
+                chunk.vector = this._computeTFIDFVector(chunk.keywords);
+            }
+        }
+
+        _computeTFIDFVector(tokens) {
+            const tfMap = new Map();
+            for (const token of tokens) {
+                tfMap.set(token, (tfMap.get(token) || 0) + 1);
+            }
+            const vector = new Map();
+            const maxTF = Math.max(1, ...tfMap.values());
+            for (const [token, tf] of tfMap) {
+                if (this.vocabulary.has(token)) {
+                    const tfNorm = tf / maxTF;
+                    const idf = this.idfValues.get(token) || 1;
+                    vector.set(token, tfNorm * idf);
+                }
+            }
+            // L2归一化
+            let norm = 0;
+            for (const v of vector.values()) norm += v * v;
+            norm = Math.sqrt(norm) || 1;
+            for (const [k, v] of vector) vector.set(k, v / norm);
+            return vector;
+        }
+
+        // 添加文档
+        addDocument(name, type, content) {
+            const id = 'doc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+            const chunks = this._chunkText(content, 500, 100);
+            const doc = {
+                id,
+                name,
+                type,
+                size: new Blob([content]).size,
+                chunks: chunks.map((text, i) => ({ text, index: i })),
+                addedAt: new Date().toISOString()
+            };
+            this.documents.push(doc);
+
+            for (let i = 0; i < chunks.length; i++) {
+                const chunkObj = {
+                    docId: id,
+                    docName: name,
+                    chunkIndex: i,
+                    text: chunks[i],
+                    vector: new Map(),
+                    keywords: this.tokenize(chunks[i])
+                };
+                this.chunks.push(chunkObj);
+            }
+
+            this.updateIDF();
+            this.saveToStorage();
+            return doc;
+        }
+
+        // 移除文档
+        removeDocument(docId) {
+            const idx = this.documents.findIndex(d => d.id === docId);
+            if (idx >= 0) {
+                this.documents.splice(idx, 1);
+                this.chunks = this.chunks.filter(c => c.docId !== docId);
+                this.updateIDF();
+                this.saveToStorage();
+                return true;
+            }
+            return false;
+        }
+
+        // 文本分块
+        _chunkText(text, chunkSize = 500, overlap = 100) {
+            const chunks = [];
+            // 先按段落分割
+            const paragraphs = text.split(/\n\s*\n/);
+            let currentChunk = '';
+
+            for (const para of paragraphs) {
+                const trimmed = para.trim();
+                if (!trimmed) continue;
+                if ((currentChunk + '\n\n' + trimmed).length > chunkSize && currentChunk.length > 0) {
+                    chunks.push(currentChunk.trim());
+                    // 重叠：保留最后overlap字符
+                    const overlapText = currentChunk.slice(-overlap);
+                    currentChunk = overlapText + '\n\n' + trimmed;
+                } else {
+                    currentChunk = currentChunk ? currentChunk + '\n\n' + trimmed : trimmed;
+                }
+            }
+            if (currentChunk.trim()) chunks.push(currentChunk.trim());
+
+            // 如果某些chunk仍然太大，进一步分割
+            const finalChunks = [];
+            for (const chunk of chunks) {
+                if (chunk.length > chunkSize * 1.5) {
+                    // 按句子分割
+                    const sentences = chunk.split(/(?<=[。！？.!?])\s*/);
+                    let subChunk = '';
+                    for (const sent of sentences) {
+                        if ((subChunk + sent).length > chunkSize && subChunk.length > 0) {
+                            finalChunks.push(subChunk.trim());
+                            subChunk = subChunk.slice(-overlap) + sent;
+                        } else {
+                            subChunk += sent;
+                        }
+                    }
+                    if (subChunk.trim()) finalChunks.push(subChunk.trim());
+                } else {
+                    finalChunks.push(chunk);
+                }
+            }
+            return finalChunks.length > 0 ? finalChunks : [text];
+        }
+
+        // 查询向量化
+        _queryToVector(query) {
+            const tokens = this.tokenize(query);
+            const tfMap = new Map();
+            for (const token of tokens) {
+                tfMap.set(token, (tfMap.get(token) || 0) + 1);
+            }
+            const vector = new Map();
+            const maxTF = Math.max(1, ...tfMap.values());
+            for (const [token, tf] of tfMap) {
+                if (this.vocabulary.has(token)) {
+                    vector.set(token, (tf / maxTF) * (this.idfValues.get(token) || 1));
+                }
+            }
+            let norm = 0;
+            for (const v of vector.values()) norm += v * v;
+            norm = Math.sqrt(norm) || 1;
+            for (const [k, v] of vector) vector.set(k, v / norm);
+            return vector;
+        }
+
+        // 余弦相似度
+        _cosineSimilarity(vecA, vecB) {
+            let dotProduct = 0;
+            const smaller = vecA.size < vecB.size ? vecA : vecB;
+            const larger = vecA.size < vecB.size ? vecB : vecA;
+            for (const [key, valA] of smaller) {
+                const valB = larger.get(key);
+                if (valB !== undefined) dotProduct += valA * valB;
+            }
+            return dotProduct; // 向量已归一化，直接返回点积
+        }
+
+        // 检索
+        retrieve(query, topK = 8) {
+            if (this.chunks.length === 0) return [];
+            const queryVec = this._queryToVector(query);
+
+            const scored = this.chunks.map((chunk, globalIndex) => {
+                const similarity = this._cosineSimilarity(queryVec, chunk.vector);
+                // 关键词匹配加分
+                const queryTokens = new Set(this.tokenize(query));
+                const keywordOverlap = chunk.keywords.filter(k => queryTokens.has(k)).length;
+                const keywordBonus = keywordOverlap / Math.max(1, queryTokens.size) * 0.15;
+                const finalScore = similarity + keywordBonus;
+                return { ...chunk, globalIndex, score: finalScore, similarity };
+            });
+
+            scored.sort((a, b) => b.score - a.score);
+            const results = scored.slice(0, topK);
+
+            // 去重：移除高度重叠的相邻结果
+            const deduped = [];
+            for (const r of results) {
+                const isDuplicate = deduped.some(d =>
+                    d.docId === r.docId && Math.abs(d.chunkIndex - r.chunkIndex) <= 1 &&
+                    d.text.slice(0, 100) === r.text.slice(0, 100)
+                );
+                if (!isDuplicate) deduped.push(r);
+            }
+            return deduped.slice(0, Math.max(3, Math.floor(topK * 0.7)));
+        }
+
+        // 获取文档统计
+        getStats() {
+            return {
+                docCount: this.documents.length,
+                chunkCount: this.chunks.length,
+                totalSize: this.documents.reduce((s, d) => s + (d.size || 0), 0),
+                documents: this.documents
+            };
+        }
+
+        // 添加研究记录
+        addResearchRecord(query, mode, results) {
+            this.researchHistory.push({
+                query,
+                mode,
+                timestamp: new Date().toISOString(),
+                resultCount: results.length,
+                topSources: results.slice(0, 3).map(r => r.docName)
+            });
+            if (this.researchHistory.length > 100) this.researchHistory.shift();
+            this.saveToStorage();
+        }
+
+        showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(60px)';
+                toast.style.transition = '0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 2800);
+        }
+    }
+
+    // ==================== 全局实例 ====================
+    const kb = new KnowledgeBase();
+    let currentMode = 'deep';
+
+    // ==================== 初始化 ====================
+    document.addEventListener('DOMContentLoaded', () => {
+        renderDocList();
+        updateKBIndicator();
+        updateSuggestionTags();
+        setupUploadZone();
+        setupModeTabs();
+        setupRetrievalSlider();
+        // 加载示例文档（如果知识库为空）
+        if (kb.documents.length === 0) {
+            loadDemoDocuments();
+        }
+    });
+
+    function loadDemoDocuments() {
+        const demos = [{
+            name: '人工智能发展概述',
+            type: 'text/markdown',
+            content: `# 人工智能发展概述
+
+## 引言
+人工智能（AI）是计算机科学的一个分支，致力于创建能够执行通常需要人类智能的任务的系统。
+
+## 主要发展阶段
+1. **符号主义时代（1950s-1980s）**：基于规则和逻辑推理的AI系统。专家系统在这一时期兴起，如MYCIN医疗诊断系统。
+2. **连接主义复兴（1980s-2000s）**：神经网络和机器学习开始崭露头角。反向传播算法的发明推动了多层感知机的发展。
+3. **深度学习革命（2012-至今）**：AlexNet在ImageNet竞赛中的突破性表现开启了深度学习时代。GPU计算能力的提升使得训练大规模神经网络成为可能。
+
+## 关键技术
+- **Transformer架构**：2017年由Vaswani等人提出，彻底改变了自然语言处理领域。注意力机制成为核心创新。
+- **大语言模型（LLM）**：GPT系列、BERT、Claude等模型展现了强大的语言理解和生成能力。
+- **强化学习**：在游戏、机器人控制和优化领域取得了显著成果，如AlphaGo击败世界围棋冠军。
+
+## 未来趋势
+边缘AI、联邦学习、可解释AI、AI安全与对齐是当前研究热点。AGI（通用人工智能）仍是长远目标。
+
+## 挑战
+数据隐私、算法偏见、能源消耗、就业影响等社会和伦理问题需要认真对待。`
+        }, {
+            name: '气候变化研究报告',
+            type: 'text/markdown',
+            content: `# 气候变化研究报告
+
+## 摘要
+全球气候变化是21世纪人类面临的最重大挑战之一。本报告综合了最新的科学研究和数据。
+
+## 关键发现
+1. **全球变暖加速**：过去十年是有记录以来最热的十年。2023年全球平均气温比工业化前水平高出约1.2°C。
+2. **极端天气事件增多**：热浪、干旱、洪水和飓风的频率和强度都在增加。
+3. **冰盖融化**：格陵兰和南极冰盖的融化速度加快，导致海平面上升。
+
+## 影响分析
+- **生态系统**：珊瑚白化、物种迁移、生物多样性丧失
+- **农业**：作物产量波动、粮食安全威胁
+- **健康**：热相关疾病增加、传染病传播范围扩大
+- **经济**：基础设施损坏、保险成本上升、生产力下降
+
+## 解决方案
+- 可再生能源转型（太阳能、风能、氢能）
+- 碳捕获与封存技术（CCS）
+- 碳定价机制（碳税、碳交易）
+- 基于自然的解决方案（植树造林、湿地恢复）
+- 国际合作（巴黎协定、COP会议）
+
+## 结论
+需要立即采取行动，将全球变暖限制在1.5°C以内。技术解决方案已经存在，关键是政策意愿和公众参与。`
+        }, {
+            name: '个人笔记-研究灵感',
+            type: 'text/plain',
+            content: `研究灵感笔记
+
+2024年研究主题想法：
+
+1. 知识图谱与LLM的结合——如何利用结构化知识增强语言模型的推理能力？可以探索将个人知识库转换为图结构，然后使用图神经网络进行关系推理。
+
+2. 多模态检索系统——不仅搜索文本，还能搜索图片、代码片段、音频笔记。使用CLIP风格的联合嵌入空间。
+
+3. 自动化文献综述——给定一个研究主题，自动从知识库中提取相关信息，识别研究空白，生成结构化的文献综述。
+
+4. 跨领域知识迁移——如何发现不同领域之间的隐藏联系？例如生物学的进化算法启发了计算机科学中的遗传算法。能否自动化这种类比发现？
+
+5. AI辅助写作工作流——将研究、大纲、写作、引用管理整合到一个无缝的工作流中。知识库提供事实基础，LLM协助表达和结构。
+
+待深入阅读：
+- Retrieval-Augmented Generation (RAG) 最新进展
+- Graph RAG 论文
+- Agentic AI 框架设计模式`
+        }];
+        for (const demo of demos) {
+            kb.addDocument(demo.name, demo.type, demo.content);
+        }
+        renderDocList();
+        updateKBIndicator();
+        updateSuggestionTags();
+        kb.showToast('已加载3份示例文档到知识库', 'info');
+    }
+
+    // ==================== UI 交互 ====================
+    function setupUploadZone() {
+        const zone = document.getElementById('uploadZone');
+        const input = document.getElementById('fileInput');
+
+        zone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            zone.classList.add('dragover');
+        });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+        input.addEventListener('change', () => {
+            handleFiles(input.files);
+            input.value = '';
+        });
+    }
+
+    function setupModeTabs() {
+        const tabs = document.querySelectorAll('#modeTabs .mode-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentMode = tab.dataset.mode;
+                updateSuggestionTags();
+            });
+        });
+    }
+
+    function setupRetrievalSlider() {
+        const slider = document.getElementById('retrievalCount');
+        const valDisplay = document.getElementById('retrievalCountVal');
+        slider.addEventListener('input', () => {
+            valDisplay.textContent = slider.value;
+        });
+    }
+
+    async function handleFiles(files) {
+        let addedCount = 0;
+        for (const file of files) {
+            try {
+                const content = await readFileContent(file);
+                if (content) {
+                    kb.addDocument(file.name, file.type, content);
+                    addedCount++;
+                }
+            } catch (e) {
+                kb.showToast(`读取文件失败: ${file.name}`, 'error');
+                console.error(e);
+            }
+        }
+        if (addedCount > 0) {
+            kb.showToast(`成功添加 ${addedCount} 份文档`, 'success');
+            renderDocList();
+            updateKBIndicator();
+            updateSuggestionTags();
+        }
+    }
+
+    function readFileContent(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            const ext = file.name.split('.').pop()?.toLowerCase();
+            if (ext === 'pdf') {
+                // PDF需要特殊处理，这里简化处理
+                reader.readAsArrayBuffer(file);
+                // 实际上在纯前端解析PDF比较复杂，这里给出提示
+                kb.showToast('PDF解析需要后端支持，请使用TXT/MD/HTML格式以获得最佳体验', 'info');
+                // 尝试读取为文本（可能乱码但至少不会崩溃）
+                reader.readAsText(file);
+            } else {
+                reader.readAsText(file);
+            }
+        }).then(content => {
+            if (content instanceof ArrayBuffer) {
+                // 简单尝试提取文本
+                const decoder = new TextDecoder('utf-8');
+                let text = decoder.decode(content);
+                // 移除明显的二进制内容
+                text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+                if (text.trim().length < 50) {
+                    return `[PDF文件: ${file.name} - 请转换为文本格式以获得更好的检索效果]`;
+                }
+                return text;
+            }
+            return content;
+        });
+    }
+
+    function addUrlDocument() {
+        document.getElementById('urlModal').showModal();
+    }
+
+    async function confirmAddUrl() {
+        const url = document.getElementById('urlInput').value.trim();
+        if (!url) return;
+        document.getElementById('urlModal').close();
+        document.getElementById('urlInput').value = '';
+        try {
+            kb.showToast('正在获取URL内容...', 'info');
+            // 使用fetch获取内容
+            const response = await fetch(url, { mode: 'cors' }).catch(() => {
+                // CORS可能会阻止，尝试使用no-cors
+                return { text: async () => `[无法直接获取URL内容: ${url}]\n请尝试手动复制内容后使用"粘贴文本"功能添加。` };
+            });
+            const content = typeof response.text === 'function' ? await response.text() :
+                `[URL内容: ${url}]\n由于跨域限制，请手动复制网页内容。`;
+            const name = url.replace(/^https?:\/\//, '').split('/')[0] + ' - ' + url.split('/').pop() ||
+                'URL文档';
+            kb.addDocument(name, 'text/html', content);
+            kb.showToast('URL文档已添加', 'success');
+            renderDocList();
+            updateKBIndicator();
+            updateSuggestionTags();
+        } catch (e) {
+            kb.showToast('获取URL失败，请检查链接或手动粘贴内容', 'error');
+        }
+    }
+
+    function addTextDocument() {
+        document.getElementById('textModal').showModal();
+    }
+
+    function confirmAddText() {
+        const title = document.getElementById('textDocTitle').value.trim() || '手动输入文档';
+        const content = document.getElementById('textDocContent').value.trim();
+        if (!content) return;
+        document.getElementById('textModal').close();
+        document.getElementById('textDocTitle').value = '';
+        document.getElementById('textDocContent').value = '';
+        kb.addDocument(title, 'text/plain', content);
+        kb.showToast('文本文档已添加', 'success');
+        renderDocList();
+        updateKBIndicator();
+        updateSuggestionTags();
+    }
+
+    function removeDocument(docId) {
+        if (kb.removeDocument(docId)) {
+            kb.showToast('文档已移除', 'success');
+            renderDocList();
+            updateKBIndicator();
+            updateSuggestionTags();
+        }
+    }
+
+    function clearAllDocs() {
+        if (kb.documents.length === 0) return;
+        if (confirm(`确定要清空知识库中的所有 ${kb.documents.length} 份文档吗？此操作不可恢复。`)) {
+            kb.documents = [];
+            kb.chunks = [];
+            kb.vocabulary.clear();
+            kb.idfValues.clear();
+            kb.totalChunks = 0;
+            kb.saveToStorage();
+            renderDocList();
+            updateKBIndicator();
+            updateSuggestionTags();
+            document.getElementById('resultsPanel').innerHTML = `
+            <div class="empty-state" style="padding:40px;">
+              <div style="font-size:3rem;margin-bottom:12px;">🔎</div>
+              <div style="font-weight:600;color:var(--text2);">知识库已清空</div>
+            </div>`;
+            kb.showToast('知识库已清空', 'info');
+        }
+    }
+
+    function renderDocList() {
+        const list = document.getElementById('docList');
+        if (kb.documents.length === 0) {
+            list.innerHTML = '<li class="empty-state">📭 尚未添加文档</li>';
+        } else {
+            list.innerHTML = kb.documents.map(d => {
+                const icon = d.type.includes('pdf') ? '📕' :
+                    d.type.includes('markdown') || d.name.endsWith('.md') ? '📝' :
+                    d.type.includes('html') ? '🌐' : '📄';
+                const sizeStr = d.size > 1024 ? (d.size / 1024).toFixed(1) + 'KB' : d.size + 'B';
+                return `
+                <li class="doc-item">
+                  <span class="doc-icon">${icon}</span>
+                  <span class="doc-name" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</span>
+                  <span class="doc-size">${sizeStr} · ${d.chunks.length}块</span>
+                  <button class="doc-remove" onclick="removeDocument('${d.id}')" title="移除">✕</button>
+                </li>`;
+            }).join('');
+        }
+    }
+
+    function updateKBIndicator() {
+        const stats = kb.getStats();
+        document.getElementById('kbDocCount').textContent =
+            `知识库: ${stats.docCount} 份文档 · ${stats.chunkCount} 个片段`;
+    }
+
+    function updateSuggestionTags() {
+        const tagsContainer = document.getElementById('suggestionTags');
+        const suggestions = {
+            deep: ['分析知识库中的核心主题', '比较不同文档的观点差异', '识别跨文档的隐藏模式', '评估论据的强度'],
+            qa: ['人工智能的关键技术有哪些？', '气候变化的主要影响是什么？', '什么是RAG技术？', '如何实现联邦学习？'],
+            summary: ['总结知识库的主要内容', '提取所有文档的共性发现', '生成知识库的结构化摘要'],
+            explore: ['发现文档间的意外关联', '识别研究空白和未涉及领域', '生成知识图谱式的概念网络']
+        };
+        const current = suggestions[currentMode] || suggestions['deep'];
+        tagsContainer.innerHTML = '<span style="font-size:0.72rem;color:var(--text3);">💡 建议:</span>' +
+            current.map(s =>
+                `<span style="font-size:0.72rem;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:3px;" onclick="document.getElementById('researchQuery').value='${escapeHtml(s)}';executeResearch();">${escapeHtml(s)}</span>`
+            ).join(' · ');
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // ==================== 研究执行 ====================
+    function executeResearch() {
+        const query = document.getElementById('researchQuery').value.trim();
+        if (!query) {
+            kb.showToast('请输入研究问题', 'info');
+            return;
+        }
+        if (kb.chunks.length === 0) {
+            kb.showToast('知识库为空，请先添加文档', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('btnResearch');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;"></span> 分析中...';
+
+        const topK = parseInt(document.getElementById('retrievalCount').value) || 8;
+        const resultsPanel = document.getElementById('resultsPanel');
+
+        // 显示加载状态
+        resultsPanel.innerHTML = `
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <span>正在检索知识库并生成深度分析...</span>
+        </div>`;
+
+        // 模拟异步处理（实际使用setTimeout让UI更新）
+        setTimeout(() => {
+            try {
+                const retrieved = kb.retrieve(query, topK);
+                kb.addResearchRecord(query, currentMode, retrieved);
+
+                if (retrieved.length === 0) {
+                    resultsPanel.innerHTML = `
+                  <div class="result-card">
+                    <div class="rc-content">未找到与查询高度相关的文档片段。请尝试：
+                      <ul style="margin:8px 0 0 20px;">
+                        <li>使用更通用的关键词</li>
+                        <li>添加更多相关文档到知识库</li>
+                        <li>减少检索片段数量要求</li>
+                      </ul>
+                    </div>
+                  </div>`;
+                } else {
+                    const analysisHTML = generateAnalysis(query, currentMode, retrieved);
+                    resultsPanel.innerHTML = analysisHTML;
+                    // 滚动到顶部
+                    resultsPanel.scrollTop = 0;
+                }
+            } catch (e) {
+                console.error('研究执行错误:', e);
+                resultsPanel.innerHTML = `
+                <div class="result-card">
+                  <div class="rc-content" style="color:var(--red);">分析过程中出现错误: ${escapeHtml(e.message)}</div>
+                </div>`;
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = '🚀 开始研究';
+        }, 400 + Math.random() * 300); // 模拟处理延迟
+    }
+
+    function generateAnalysis(query, mode, retrieved) {
+        // 构建分析结果（模拟LLM深度分析）
+        const docSources = [...new Set(retrieved.map(r => r.docName))];
+        const totalRelevant = retrieved.length;
+        const avgScore = retrieved.reduce((s, r) => s + r.score, 0) / totalRelevant;
+
+        let html = '';
+
+        // 顶部摘要卡片
+        html += `
+        <div class="result-card" style="border-left: 3px solid var(--accent);">
+          <div class="rc-header">
+            <span class="badge badge-type">${getModeLabel(mode)}</span>
+            <span class="badge badge-source">${docSources.length} 个来源</span>
+            <span class="badge badge-score">${totalRelevant} 个相关片段</span>
+          </div>
+          <div class="rc-content">
+            <strong>查询:</strong> "${escapeHtml(query)}"
+          </div>
+        </div>`;
+
+        // 根据模式生成不同的分析内容
+        if (mode === 'deep') {
+            html += generateDeepAnalysis(query, retrieved, docSources);
+        } else if (mode === 'qa') {
+            html += generateQAAnswer(query, retrieved, docSources);
+        } else if (mode === 'summary') {
+            html += generateSummary(retrieved, docSources);
+        } else if (mode === 'explore') {
+            html += generateExploration(retrieved, docSources);
+        }
+
+        // 检索结果详情
+        html += `
+        <div class="result-card">
+          <div class="rc-header">
+            <span class="badge badge-type">📋 检索结果详情</span>
+            <span style="font-size:0.72rem;color:var(--text3);">共 ${totalRelevant} 个相关片段</span>
+          </div>`;
+
+        retrieved.forEach((r, i) => {
+            const highlightedText = highlightKeywords(r.text, query);
+            html += `
+            <div class="highlight-box" style="margin:8px 0;">
+              <div style="font-size:0.72rem;color:var(--accent);margin-bottom:4px;font-weight:600;">
+                📄 ${escapeHtml(r.docName)} · 片段 #${r.chunkIndex + 1} · 相关度: ${(r.score * 100).toFixed(1)}%
+              </div>
+              <div style="font-size:0.82rem;color:var(--text2);line-height:1.6;">
+                ${highlightedText}
+              </div>
+            </div>`;
+        });
+        html += '</div>';
+
+        return html;
+    }
+
+    function generateDeepAnalysis(query, retrieved, docSources) {
+        // 提取关键概念
+        const allText = retrieved.map(r => r.text).join(' ');
+        const keyConcepts = extractKeyConcepts(allText, query);
+
+        return `
+        <div class="result-card">
+          <div class="rc-header">
+            <span class="badge badge-type">🔬 深度分析</span>
+          </div>
+          <div class="rc-content">
+            <div class="insight-block">
+              <div class="insight-label">📊 核心发现</div>
+              <p>基于知识库中 <strong>${retrieved.length}</strong> 个相关片段的综合分析，识别出以下核心主题：</p>
+              <ul style="margin:8px 0 0 20px;">
+                ${keyConcepts.map(c => `<li><strong>${escapeHtml(c.concept)}</strong>: ${escapeHtml(c.description)}</li>`).join('')}
+              </ul>
+            </div>
+            <div class="insight-block">
+              <div class="insight-label">🔗 跨文档关联</div>
+              <p>在 <strong>${docSources.length}</strong> 份文档中发现了相关内容。这些文档从不同角度探讨了该主题，
+              ${docSources.length > 1 ? '形成了互补的知识网络。以下是文档间的关联模式：' : '建议添加更多相关文档以获得更丰富的跨文档分析。'}</p>
+              ${docSources.length > 1 ? generateCrossDocRelations(retrieved) : ''}
+            </div>
+            <div class="insight-block">
+              <div class="insight-label">💡 研究建议</div>
+              <p>基于当前知识库内容，建议进一步探索以下方向：</p>
+              <ul style="margin:8px 0 0 20px;">
+                ${generateResearchSuggestions(keyConcepts, query)}
+              </ul>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function generateQAAnswer(query, retrieved, docSources) {
+        const bestMatch = retrieved[0];
+        const supportingCount = retrieved.filter(r => r.score > 0.3).length;
+        return `
+        <div class="result-card">
+          <div class="rc-header">
+            <span class="badge badge-type">💬 问答结果</span>
+            <span class="badge badge-score">置信度: ${(bestMatch.score * 100).toFixed(0)}%</span>
+          </div>
+          <div class="rc-content">
+            <div class="insight-block">
+              <div class="insight-label">📌 最佳答案</div>
+              <p>${escapeHtml(bestMatch.text.substring(0, 500))}${bestMatch.text.length > 500 ? '...' : ''}</p>
+            </div>
+            <p style="font-size:0.8rem;color:var(--text3);margin-top:8px;">
+              该答案来自 <strong>${escapeHtml(bestMatch.docName)}</strong>，
+              另有 <strong>${supportingCount - 1}</strong> 个片段提供支持性证据。
+            </p>
+          </div>
+        </div>`;
+    }
+
+    function generateSummary(retrieved, docSources) {
+        const allText = retrieved.map(r => r.text).join('\n\n');
+        const totalLength = allText.length;
+        const estimatedReadTime = Math.ceil(totalLength / 500);
+        return `
+        <div class="result-card">
+          <div class="rc-header">
+            <span class="badge badge-type">📝 摘要总结</span>
+            <span style="font-size:0.72rem;color:var(--text3);">覆盖 ${docSources.length} 份文档</span>
+          </div>
+          <div class="rc-content">
+            <div class="insight-block">
+              <div class="insight-label">📋 内容概览</div>
+              <p>检索到 <strong>${retrieved.length}</strong> 个相关片段，总计约 <strong>${totalLength}</strong> 字符，
+              预计阅读时间 <strong>${estimatedReadTime}</strong> 分钟。</p>
+              <p style="margin-top:6px;">主要来源: ${docSources.map(d => `<em>${escapeHtml(d)}</em>`).join('、')}</p>
+            </div>
+            <div class="insight-block">
+              <div class="insight-label">🎯 关键要点</div>
+              <ol style="margin:8px 0 0 20px;">
+                ${retrieved.slice(0, 5).map(r => `
+                  <li style="margin-bottom:6px;">
+                    <strong>${escapeHtml(r.docName)}</strong>: 
+                    ${escapeHtml(r.text.substring(0, 200))}${r.text.length > 200 ? '...' : ''}
+                  </li>
+                `).join('')}
+              </ol>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function generateExploration(retrieved, docSources) {
+        const allText = retrieved.map(r => r.text).join(' ');
+        const concepts = extractKeyConcepts(allText, '');
+        const unexpectedLinks = findUnexpectedLinks(retrieved);
+        return `
+        <div class="result-card">
+          <div class="rc-header">
+            <span class="badge badge-type">🔍 探索发现</span>
+          </div>
+          <div class="rc-content">
+            <div class="insight-block">
+              <div class="insight-label">🌐 概念网络</div>
+              <p>在知识库中识别到以下概念集群：</p>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;">
+                ${concepts.map(c => `
+                  <span style="background:var(--surface3);padding:5px 10px;border-radius:14px;font-size:0.78rem;border:1px solid var(--border-light);">
+                    ${escapeHtml(c.concept)}
+                  </span>
+                `).join('')}
+              </div>
+            </div>
+            ${unexpectedLinks.length > 0 ? `
+            <div class="insight-block">
+              <div class="insight-label">⚡ 意外关联</div>
+              ${unexpectedLinks.map(link => `
+                <p style="margin:4px 0;font-size:0.85rem;">
+                  🔗 <strong>${escapeHtml(link.source)}</strong> ⟷ <strong>${escapeHtml(link.target)}</strong>: ${escapeHtml(link.description)}
+                </p>
+              `).join('')}
+            </div>` : ''}
+            <div class="insight-block">
+              <div class="insight-label">🕳️ 知识空白</div>
+              <p>基于当前知识库内容，以下领域可能值得补充：</p>
+              <ul style="margin:8px 0 0 20px;">
+                ${concepts.length > 0 ? `
+                  <li>与"${escapeHtml(concepts[0]?.concept || '核心主题')}"相关的实践案例</li>
+                  <li>最新研究进展和前沿动态</li>
+                  <li>跨学科视角和批判性观点</li>
+                ` : '<li>建议添加更多样化的文档以丰富知识库</li>'}
+              </ul>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // ==================== 辅助函数 ====================
+    function highlightKeywords(text, query) {
+        const queryTokens = kb.tokenize(query).filter(t => t.length > 1 && !t.startsWith('NUM:'));
+        let result = escapeHtml(text);
+        // 简化的高亮
+        for (const token of queryTokens.slice(0, 10)) {
+            const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${escaped})`, 'gi');
+            result = result.replace(regex, '<mark>$1</mark>');
+        }
+        // 截断过长文本
+        if (result.length > 600) {
+            result = result.substring(0, 600) + '...';
+        }
+        return result;
+    }
+
+    function extractKeyConcepts(text, query) {
+        // 简化的关键概念提取
+        const tokens = kb.tokenize(text);
+        const freq = new Map();
+        for (const token of tokens) {
+            if (token.length > 1 && !token.startsWith('NUM:') && !/^[a-z]$/.test(token)) {
+                freq.set(token, (freq.get(token) || 0) + 1);
+            }
+        }
+        const sorted = [...freq.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .filter(([t]) => t.length >= 2)
+            .slice(0, 6);
+
+        const queryTokens = kb.tokenize(query).filter(t => t.length > 1);
+        return sorted.map(([concept, count]) => ({
+            concept,
+            description: `在检索结果中出现 ${count} 次，与查询${queryTokens.some(qt => concept.includes(qt) || qt.includes(concept)) ? '高度相关' : '可能存在关联'}`
+        }));
+    }
+
+    function generateCrossDocRelations(retrieved) {
+        const docGroups = {};
+        for (const r of retrieved) {
+            if (!docGroups[r.docName]) docGroups[r.docName] = [];
+            docGroups[r.docName].push(r);
+        }
+        const docNames = Object.keys(docGroups);
+        if (docNames.length < 2) return '';
+        return `
+        <ul style="margin:8px 0 0 20px;font-size:0.85rem;">
+          ${docNames.slice(0, 4).map((name, i) => `
+            <li><strong>${escapeHtml(name)}</strong>: 贡献了 ${docGroups[name].length} 个相关片段，
+            平均相关度 ${(docGroups[name].reduce((s,r) => s + r.score, 0) / docGroups[name].length * 100).toFixed(0)}%</li>
+          `).join('')}
+        </ul>`;
+    }
+
+    function generateResearchSuggestions(concepts, query) {
+        const suggestions = [
+            '<li>深入探索 <strong>' + escapeHtml(concepts[0]?.concept || '核心概念') + '</strong> 在不同文档中的定义和应用差异</li>',
+            '<li>收集更多关于该主题的最新资料，扩展知识库的时效性</li>',
+            '<li>尝试使用"探索发现"模式识别隐藏的跨文档关联</li>',
+        ];
+        if (concepts.length > 2) {
+            suggestions.push(
+                `<li>对比 <strong>${escapeHtml(concepts[0]?.concept || '概念A')}</strong> 和 <strong>${escapeHtml(concepts[1]?.concept || '概念B')}</strong> 之间的关系</li>`
+            );
+        }
+        return suggestions.join('');
+    }
+
+    function findUnexpectedLinks(retrieved) {
+        const links = [];
+        const docNames = [...new Set(retrieved.map(r => r.docName))];
+        if (docNames.length >= 2) {
+            // 寻找不同文档中讨论相似概念的片段
+            for (let i = 0; i < retrieved.length; i++) {
+                for (let j = i + 1; j < retrieved.length; j++) {
+                    if (retrieved[i].docId !== retrieved[j].docId) {
+                        const tokensA = new Set(retrieved[i].keywords);
+                        const tokensB = new Set(retrieved[j].keywords);
+                        const overlap = [...tokensA].filter(t => tokensB.has(t) && t.length > 2);
+                        if (overlap.length >= 5 && links.length < 3) {
+                            links.push({
+                                source: retrieved[i].docName,
+                                target: retrieved[j].docName,
+                                description: `共享 ${overlap.length} 个关键概念，包括: ${overlap.slice(0, 4).join(', ')}`
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        return links.slice(0, 3);
+    }
+
+    function getModeLabel(mode) {
+        const labels = {
+            'deep': '🔬 深度分析',
+            'qa': '💬 问答模式',
+            'summary': '📝 摘要总结',
+            'explore': '🔍 探索发现'
+        };
+        return labels[mode] || mode;
+    }
+
+    function exportResearch() {
+        if (kb.researchHistory.length === 0) {
+            kb.showToast('暂无研究记录可导出', 'info');
+            return;
+        }
+        const exportData = {
+            exportTime: new Date().toISOString(),
+            knowledgeBaseStats: kb.getStats(),
+            researchHistory: kb.researchHistory,
+            documents: kb.documents.map(d => ({
+                name: d.name,
+                type: d.type,
+                chunks: d.chunks.length,
+                addedAt: d.addedAt
+            }))
+        };
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `research-export-${new Date().toISOString().slice(0,10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        kb.showToast('研究记录已导出', 'success');
+    }
+
+    // ==================== 键盘快捷键 ====================
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            executeResearch();
+        }
+    });
+
+    // ==================== 初始化完成 ====================
+    console.log('🧠 个人知识库驱动的深度研究助手已就绪');
+    console.log('   - 知识库文档数:', kb.documents.length);
+    console.log('   - 索引片段数:', kb.chunks.length);
+    console.log('   - 按 Ctrl+Enter 快速执行研究');
+    console.log('   - 支持 PDF / TXT / Markdown / HTML / CSV / JSON');
+    console.log('   - 4种研究模式: 深度分析 | 问答 | 摘要 | 探索');
+</script>
+</body>
+</html>
